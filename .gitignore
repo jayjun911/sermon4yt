@@ -6,3 +6,5 @@ bible_debug.html
 go.ps1
 go.bat
 v.bat
+gen.bat
+python

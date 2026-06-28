@@ -225,6 +225,24 @@ def make_frame(book_ch: str, verses_str: str, title: str,
     # Bible verse text — all verses joined, left-justified
     if bible_text:
         full_text = " ".join(ln.strip() for ln in bible_text.splitlines() if ln.strip())
+        
+        # Dynamically adjust font size to fit the remaining space (HEIGHT - 56)
+        min_font_size = 18
+        max_font_size = 38
+        best_font_size = max_font_size
+        for size in range(max_font_size, min_font_size - 1, -2):
+            test_font = find_font(size)
+            test_lines = wrap_text(draw, full_text, test_font, max_w)
+            total_h = sum(text_h(draw, wline, test_font) + 6 for wline in test_lines)
+            if total_h > 0:
+                total_h -= 6
+            if y + total_h <= HEIGHT - 56:
+                best_font_size = size
+                break
+        else:
+            best_font_size = min_font_size
+
+        font_verse = find_font(best_font_size)
         x_left = (WIDTH - max_w) // 2
         for wline in wrap_text(draw, full_text, font_verse, max_w):
             if y > HEIGHT - 56:
