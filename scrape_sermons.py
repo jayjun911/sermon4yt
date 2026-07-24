@@ -75,8 +75,19 @@ def parse_entries(soup: BeautifulSoup) -> list[dict]:
                 if text:
                     break
 
+        # Find date from preceding <td>
+        date = ""
+        parent = a.parent
+        if parent and parent.name == "td":
+            prev_td = parent.find_previous_sibling("td")
+            if prev_td:
+                text = prev_td.get_text(strip=True)
+                if re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+                    date = text
+
         entries.append({
             "id": len(entries) + 1,
+            "date": date,
             "title": title,
             "scripture": scripture,
             "url": BASE_URL + href,
@@ -93,6 +104,21 @@ def cmd_fetch(session: requests.Session) -> list[dict]:
 
     soup = BeautifulSoup(resp.text, "html.parser")
     entries = parse_entries(soup)
+
+    # Preserve existing youtube_url mapping if available
+    yt_map = {}
+    if os.path.exists(JSON_FILE):
+        try:
+            with open(JSON_FILE, "r", encoding="utf-8") as f:
+                old_entries = json.load(f)
+                for item in old_entries:
+                    if item.get("url") and item.get("youtube_url"):
+                        yt_map[item["url"]] = item["youtube_url"]
+        except Exception:
+            pass
+
+    for entry in entries:
+        entry["youtube_url"] = yt_map.get(entry["url"], None)
 
     with open(JSON_FILE, "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
@@ -153,14 +179,23 @@ def format_scripture(raw: str) -> str:
 def entry_filepath(entry: dict) -> str:
     title = safe_filename(entry["title"])
     scripture = safe_filename(format_scripture(entry["scripture"]))
-    filename = f"{scripture} - {title}.mp3" if scripture else f"{title}.mp3"
+    date = safe_filename(entry.get("date", "").strip())
+
+    parts = [title]
+    if scripture:
+        parts.append(f"({scripture})")
+    if date:
+        parts.append(date)
+
+    filename = f"{' '.join(parts)}.mp3"
     return os.path.join(OUTPUT_DIR, filename)
 
 
 def print_entries(entries: list[dict]):
     for e in entries:
         flag = "O" if os.path.exists(entry_filepath(e)) else " "
-        print(f"[{e['id']:4d}][{flag}] {e['title']}  |  {e['scripture']}")
+        date_str = f"[{e['date']}] " if e.get("date") else ""
+        print(f"[{e['id']:4d}][{flag}] {date_str}{e['title']}  |  {e['scripture']}")
 
 
 def download_entry(entry: dict, session: requests.Session):
@@ -194,8 +229,8 @@ def main():
                         help="List entries  e.g. --list 1-20  or  --list 1,5,10-15")
     parser.add_argument("--search", metavar="QUERY",
                         help="Search by title or scripture  e.g. --search 창세기")
-    parser.add_argument("--down", metavar="SPEC",
-                        help="Download entries  e.g. --down 1,3,5-10")
+    parser.add_argument("--down", metavar="SPEC", nargs="?", const="SEARCH_RESULTS",
+                        help="Download entries  e.g. --down 1,3,5-10  or  --search QUERY --down")
     args = parser.parse_args()
 
     session = make_session()
@@ -215,12 +250,35 @@ def main():
 
     if args.search:
         q = args.search.lower()
-        results = [e for e in entries if q in e["title"].lower() or q in e["scripture"].lower()]
+        results = [e for e in entries if q in e["title"].lower() or q in e["scripture"].lower() or q in e.get("date", "").lower()]
         print(f"Found {len(results)} result(s) for '{args.search}':")
         print_entries(results)
+
+        if args.down is not None:
+            if args.down == "SEARCH_RESULTS":
+                targets = results
+            elif is_search_query(args.down):
+                sub_q = args.down.lower()
+                targets = [e for e in results if sub_q in e["title"].lower() or sub_q in e["scripture"].lower()]
+            else:
+                indices = parse_spec(args.down, len(results))
+                targets = [results[i - 1] for i in indices]
+
+            if not targets:
+                print("No entries selected for download.")
+                return
+
+            print(f"\nDownloading {len(targets)} sermon(s)...")
+            for i, entry in enumerate(targets, 1):
+                print(f"[{i}/{len(targets)}]", end=" ")
+                download_entry(entry, session)
         return
 
-    if args.down:
+    if args.down is not None:
+        if args.down == "SEARCH_RESULTS":
+            print("Error: --down requires a range/keyword (e.g. --down 1-10 or --down 창세기) unless used with --search.")
+            return
+
         if is_search_query(args.down):
             q = args.down.lower()
             targets = [e for e in entries if q in e["title"].lower() or q in e["scripture"].lower()]
@@ -228,6 +286,7 @@ def main():
         else:
             indices = parse_spec(args.down, total)
             targets = [entries[i - 1] for i in indices]
+
         for i, entry in enumerate(targets, 1):
             print(f"[{i}/{len(targets)}]", end=" ")
             download_entry(entry, session)
@@ -241,6 +300,7 @@ def main():
         print("  --list 1-20          show entries 1-20")
         print("  --list 100-          show entries 100 to end")
         print("  --search 창세기       search title / scripture")
+        print("  --search 창세기 --down search & download matching entries")
         print("  --down 1,3,5-10      download by number/range")
         print("  --down 창세기         download all matching entries")
 

@@ -140,9 +140,21 @@ def text_h(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -
 
 def parse_filename(stem: str) -> tuple[str, str, str]:
     """
-    '창세기 02장 1-14절 - 생기를 받아 생령이 된 사람'
-    -> ("창세기 02장", "1-14절", "생기를 받아 생령이 된 사람")
+    New format: '성령의 하나되게 하심 (에베소서 04장 1-6절) 2014-02-09'
+    Old format: '에베소서 04장 1-6절 - 성령의 하나되게 하심'
+    -> ("에베소서 04장", "1-6절", "성령의 하나되게 하심")
     """
+    # New format: Title (Scripture) [Date]
+    m = re.match(r"^(.*?)\s*\(([^)]+)\)(?:\s+\d{4}-\d{2}-\d{2})?$", stem)
+    if m:
+        title = m.group(1).strip()
+        scripture = m.group(2).strip()
+        sm = re.match(r"^(.*\d+장)\s*(.+)?$", scripture)
+        if sm:
+            return sm.group(1).strip(), (sm.group(2) or "").strip(), title
+        return scripture, "", title
+
+    # Old format: Scripture - Title
     parts = stem.split(" - ", 1)
     title = parts[1].strip() if len(parts) > 1 else ""
     scripture = parts[0].strip()

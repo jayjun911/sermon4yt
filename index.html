@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>샬롬 말씀 아카이브 검색</title>
+  <meta name="description" content="샬롬교회 설교 말씀 아카이브 - 설교 제목, 본문 구절, 날짜 범위 검색 및 MP3/YouTube 플레이어 제공">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="샬롬 말씀 아카이브 검색">
+  <meta property="og:description" content="샬롬교회 설교 말씀 아카이브 - 제목, 본문 구절 및 날짜 검색">
+  <meta property="og:type" content="website">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Favicon / Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-icon">
+          <i class="fa-solid fa-book-bible"></i>
+        </div>
+        <div class="brand-text">
+          <h1>샬롬 말씀 아카이브 검색</h1>
+          <p class="subtitle">Shalomm Sermon Library &amp; Media Archive</p>
+        </div>
+      </div>
+      <div class="header-stats" id="headerStats">
+        <span class="stat-badge"><i class="fa-solid fa-layer-group"></i> <span id="totalCount">0</span> 설교 데이터</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="main-container">
+
+    <!-- Search & Filter Panel -->
+    <section class="filter-card">
+      <div class="filter-grid">
+        
+        <!-- Keyword Search -->
+        <div class="filter-group keyword-group">
+          <label for="searchInput"><i class="fa-solid fa-magnifying-glass"></i> 검색어 (제목 또는 성경 구절)</label>
+          <div class="input-wrapper">
+            <input type="text" id="searchInput" placeholder="예: 성령의 하나되게 하심, 에베소서 4장, 창세기..." autocomplete="off">
+            <button type="button" id="clearSearchBtn" class="input-clear-btn" title="검색어 지우기">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="filter-group date-group">
+          <label><i class="fa-regular fa-calendar-days"></i> 날짜 범위 (Start ~ End)</label>
+          <div class="date-range-inputs">
+            <input type="date" id="startDate" title="시작 날짜">
+            <span class="date-sep">~</span>
+            <input type="date" id="endDate" title="종료 날짜">
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Preset Filter Buttons & Actions -->
+      <div class="preset-row">
+        <div class="preset-label">빠른 날짜 필터:</div>
+        <div class="preset-buttons">
+          <button type="button" class="preset-btn active" data-preset="all">전체</button>
+          <button type="button" class="preset-btn" data-preset="2014">2014년</button>
+          <button type="button" class="preset-btn" data-preset="2013">2013년</button>
+          <button type="button" class="preset-btn" data-preset="2012">2012년</button>
+          <button type="button" class="preset-btn" data-preset="2011">2011년</button>
+          <button type="button" class="preset-btn" data-preset="2010">2010년 이전</button>
+        </div>
+        <div class="media-filter-group">
+          <label class="yt-only-label" for="ytOnlyFilter">
+            <input type="checkbox" id="ytOnlyFilter">
+            <i class="fa-brands fa-youtube" style="color: #ef4444;"></i> YouTube 영상만
+          </label>
+        </div>
+        <button type="button" id="resetFiltersBtn" class="reset-btn">
+          <i class="fa-solid fa-rotate-left"></i> 필터 초기화
+        </button>
+      </div>
+
+    </section>
+
+    <!-- Search Results Summary Bar -->
+    <section class="results-bar">
+      <div class="results-info">
+        <span class="results-count-text">검색 결과: <strong id="matchedCount">0</strong>건</span>
+        <span id="activeFilterBadge" class="filter-indicator-badge hidden">필터 적용됨</span>
+      </div>
+      <div class="results-controls">
+        <div class="view-toggle-group">
+          <button type="button" id="btnViewCard" class="view-toggle-btn" title="카드 뷰">
+            <i class="fa-solid fa-border-all"></i> <span class="view-btn-text">카드</span>
+          </button>
+          <button type="button" id="btnViewList" class="view-toggle-btn active" title="리스트 뷰">
+            <i class="fa-solid fa-list-ul"></i> <span class="view-btn-text">리스트</span>
+          </button>
+        </div>
+        <div class="results-sort">
+          <label for="sortOrder"><i class="fa-solid fa-arrow-down-short-wide"></i> 정렬:</label>
+          <select id="sortOrder">
+            <option value="date-desc">날짜 최신순</option>
+            <option value="date-asc">날짜 오래된순</option>
+            <option value="id-asc">ID 순</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sermon Cards Container -->
+    <section class="sermon-list list-view" id="sermonList">
+      <!-- Dynamic Javascript rendering -->
+      <div class="loading-spinner" id="loadingSpinner">
+        <i class="fa-solid fa-circle-notch fa-spin"></i>
+        <p>설교 데이터를 불러오는 중입니다...</p>
+      </div>
+    </section>
+
+    <!-- Pagination / Load More if needed -->
+    <div class="pagination-wrapper hidden" id="paginationWrapper">
+      <button type="button" id="loadMoreBtn" class="load-more-btn">
+        <i class="fa-solid fa-angle-down"></i> 더보기 (<span id="remainingCount">0</span>개 남음)
+      </button>
+    </div>
+
+  </main>
+
+  <!-- Sticky Bottom Audio Player Bar -->
+  <div class="audio-player-bar hidden" id="audioPlayerBar">
+    <div class="player-container">
+      <div class="player-info">
+        <div class="player-icon"><i class="fa-solid fa-music"></i></div>
+        <div class="player-text">
+          <div class="player-title" id="playerTitle">설교 제목</div>
+          <div class="player-meta" id="playerMeta">날짜 | 성경 구절</div>
+        </div>
+      </div>
+      
+      <div class="player-controls">
+        <button type="button" id="btnRewind" class="control-btn" title="10초 뒤로"><i class="fa-solid fa-rotate-left"></i></button>
+        <button type="button" id="btnPlayPause" class="control-btn play-btn" title="재생/일시정지"><i class="fa-solid fa-play"></i></button>
+        <button type="button" id="btnForward" class="control-btn" title="10초 앞으로"><i class="fa-solid fa-rotate-right"></i></button>
+      </div>
+
+      <div class="player-progress">
+        <span id="currentTime" class="time-stamp">00:00</span>
+        <div class="progress-bar-wrapper" id="progressBarWrapper">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+        <span id="totalDuration" class="time-stamp">00:00</span>
+      </div>
+
+      <div class="player-extra">
+        <button type="button" id="btnMute" class="control-btn" title="음소거"><i class="fa-solid fa-volume-high"></i></button>
+        <a id="playerDownloadLink" href="#" download class="control-btn download-btn" title="MP3 다운로드"><i class="fa-solid fa-download"></i></a>
+        <button type="button" id="btnClosePlayer" class="control-btn close-btn" title="플레이어 닫기"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <audio id="globalAudio" preload="metadata"></audio>
+  </div>
+
+  <!-- Scripture Detail Modal Player -->
+  <div class="modal-backdrop hidden" id="scriptureModal">
+    <div class="modal-dialog scripture-dialog">
+      <div class="modal-header">
+        <div class="modal-header-badge"><i class="fa-solid fa-book-bible"></i> 성경 말씀 본문</div>
+        <button type="button" class="modal-close-btn" id="closeScriptureModalBtn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body scripture-modal-body">
+        <h2 id="scriptureModalTitle" class="scripture-modal-title">설교 제목</h2>
+        <div class="scripture-modal-meta">
+          <span id="scriptureModalDate"><i class="fa-regular fa-calendar"></i> 2005-01-01</span>
+          <span id="scriptureModalVerseBadge" class="verse-badge"><i class="fa-solid fa-book-open"></i> 창세기 1장 1절</span>
+        </div>
+        <div class="scripture-content-box">
+          <div class="scripture-passage-header">
+            <i class="fa-solid fa-book-open-reader"></i>
+            <span id="scriptureModalPassageText">개역개정 성경 본문</span>
+          </div>
+          <div class="scripture-text-scroll-box" id="scriptureTextContent">
+            <!-- Dynamic scripture verses text -->
+          </div>
+        </div>
+        <div class="scripture-modal-actions" id="scriptureModalActions">
+          <!-- Dynamic Media Buttons -->
+        </div>
+      </div>
+    </div>
+  <!-- YouTube Modal Player -->
+  <div class="modal-backdrop hidden" id="youtubeModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modalVideoTitle">유튜브 설교 영상</h3>
+        <button type="button" class="modal-close-btn" id="closeModalBtn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="iframe-responsive">
+          <iframe id="youtubeIframe" src="" title="YouTube Video Player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="app-footer">
+    <p>&copy; 샬롬교회 말씀 아카이브. Hosted on GitHub Pages.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
