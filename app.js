@@ -203,6 +203,10 @@ document.addEventListener('DOMContentLoaded', () => {
              <i class="fa-brands fa-youtube"></i> 준비 중
            </button>`;
 
+      const shareBtnHtml = `<button type="button" class="btn-media btn-share" data-id="${sermon.id}">
+        <i class="fa-solid fa-share-nodes"></i> 공유
+      </button>`;
+
       if (currentViewMode === 'card') {
         card.innerHTML = `
           <div>
@@ -217,9 +221,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="card-actions">
             <button type="button" class="btn-media btn-audio" data-mp3="${sermon.url}" data-id="${sermon.id}" data-title="${sermon.title}" data-meta="${sermon.date} | ${sermon.scripture}">
-              <i class="fa-solid fa-headphones"></i> 오디오 듣기
+              <i class="fa-solid fa-headphones"></i> 오디오
             </button>
             ${youtubeBtnHtml}
+            ${shareBtnHtml}
           </div>
         `;
       } else {
@@ -239,9 +244,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="card-actions">
             <button type="button" class="btn-media btn-audio" data-mp3="${sermon.url}" data-id="${sermon.id}" data-title="${sermon.title}" data-meta="${sermon.date} | ${sermon.scripture}">
-              <i class="fa-solid fa-headphones"></i> 오디오 듣기
+              <i class="fa-solid fa-headphones"></i> 오디오
             </button>
             ${youtubeBtnHtml}
+            ${shareBtnHtml}
           </div>
         `;
       }
@@ -350,21 +356,105 @@ document.addEventListener('DOMContentLoaded', () => {
     currentPlayingId = null;
   });
 
-  // 5. YouTube Embed Modal Controls
-  function extractYouTubeId(url) {
-    if (!url) return null;
-    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-    return match ? match[1] : null;
-  }
-
   function openYouTubeTab(ytUrl) {
     if (!ytUrl) return;
-    // Pause audio player if playing
     if (!globalAudio.paused) {
       globalAudio.pause();
     }
     window.open(ytUrl, '_blank');
   }
+
+  // Toast Notification Helper
+  let toastTimer = null;
+  function showToast(message) {
+    const toast = document.getElementById('toastNotification');
+    const toastMessage = document.getElementById('toastMessage');
+    if (!toast || !toastMessage) return;
+
+    toastMessage.textContent = message;
+    toast.classList.remove('hidden');
+
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 2800);
+  }
+
+  // Share Modal Elements & Controls
+  const shareModal = document.getElementById('shareModal');
+  const closeShareModalBtn = document.getElementById('closeShareModalBtn');
+  const shareModalTitle = document.getElementById('shareModalTitle');
+  const shareModalMeta = document.getElementById('shareModalMeta');
+  const shareMp3Option = document.getElementById('shareMp3Option');
+  const shareYtOption = document.getElementById('shareYtOption');
+  const shareMp3UrlText = document.getElementById('shareMp3UrlText');
+  const shareYtUrlText = document.getElementById('shareYtUrlText');
+  const btnCopyMp3 = document.getElementById('btnCopyMp3');
+  const btnCopyYt = document.getElementById('btnCopyYt');
+
+  let activeShareSermon = null;
+
+  function openShareModal(sermon) {
+    if (!sermon) return;
+    activeShareSermon = sermon;
+
+    shareModalTitle.textContent = sermon.title;
+    shareModalMeta.textContent = `${sermon.date || '날짜 미상'} | ${sermon.scripture || '성경 구절 없음'}`;
+
+    // MP3 URL
+    shareMp3UrlText.textContent = sermon.url || 'MP3 URL 없음';
+    btnCopyMp3.disabled = !sermon.url;
+
+    // YouTube URL
+    if (sermon.youtube_url) {
+      shareYtUrlText.textContent = sermon.youtube_url;
+      shareYtOption.classList.remove('disabled');
+      btnCopyYt.disabled = false;
+    } else {
+      shareYtUrlText.textContent = '유튜브 영상이 연결되지 않음';
+      shareYtOption.classList.add('disabled');
+      btnCopyYt.disabled = true;
+    }
+
+    shareModal.classList.remove('hidden');
+  }
+
+  function closeShareModal() {
+    if (shareModal) shareModal.classList.add('hidden');
+    activeShareSermon = null;
+  }
+
+  if (closeShareModalBtn) {
+    closeShareModalBtn.addEventListener('click', closeShareModal);
+  }
+  if (shareModal) {
+    shareModal.addEventListener('click', (e) => {
+      if (e.target === shareModal) closeShareModal();
+    });
+  }
+
+  function copyMp3Url() {
+    if (!activeShareSermon || !activeShareSermon.url) return;
+    navigator.clipboard.writeText(activeShareSermon.url)
+      .then(() => {
+        showToast('MP3 오디오 URL이 클립보드에 복사되었습니다!');
+        closeShareModal();
+      })
+      .catch(err => console.error('Copy failed:', err));
+  }
+
+  function copyYtUrl() {
+    if (!activeShareSermon || !activeShareSermon.youtube_url) return;
+    navigator.clipboard.writeText(activeShareSermon.youtube_url)
+      .then(() => {
+        showToast('YouTube 영상 URL이 클립보드에 복사되었습니다!');
+        closeShareModal();
+      })
+      .catch(err => console.error('Copy failed:', err));
+  }
+
+  if (shareMp3Option) shareMp3Option.addEventListener('click', copyMp3Url);
+  if (shareYtOption) shareYtOption.addEventListener('click', copyYtUrl);
 
   function openScriptureModal(sermon) {
     if (!sermon) return;
@@ -394,7 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }
 
-    // Modal Actions (Play Audio & YouTube)
+    // Modal Actions (Play Audio, YouTube & Share)
     const scriptureModalActions = document.getElementById('scriptureModalActions');
     const youtubeBtnHtml = sermon.youtube_url
       ? `<button type="button" class="btn-media btn-youtube" data-yt="${sermon.youtube_url}" data-title="${sermon.title}">
@@ -406,9 +496,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     scriptureModalActions.innerHTML = `
       <button type="button" class="btn-media btn-audio" data-mp3="${sermon.url}" data-id="${sermon.id}" data-title="${sermon.title}" data-meta="${sermon.date} | ${sermon.scripture}">
-        <i class="fa-solid fa-headphones"></i> 오디오 듣기
+        <i class="fa-solid fa-headphones"></i> 오디오
       </button>
       ${youtubeBtnHtml}
+      <button type="button" class="btn-media btn-share" data-id="${sermon.id}">
+        <i class="fa-solid fa-share-nodes"></i> 공유
+      </button>
     `;
 
     scriptureModal.classList.remove('hidden');
@@ -449,6 +542,17 @@ document.addEventListener('DOMContentLoaded', () => {
         openYouTubeTab(ytUrl);
         return;
       }
+
+      const shareBtn = e.target.closest('.btn-share');
+      if (shareBtn) {
+        const id = parseInt(shareBtn.dataset.id);
+        const sermon = allSermons.find(s => s.id === id);
+        if (sermon) {
+          closeScriptureModal();
+          openShareModal(sermon);
+        }
+        return;
+      }
     });
   }
 
@@ -457,8 +561,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Audio button click
     const audioBtn = e.target.closest('.btn-audio');
     if (audioBtn) {
+      e.stopPropagation();
       const mp3 = audioBtn.dataset.mp3;
-      const id = parseInt(audioBtn.dataset.id);
+      const id = parseInt(audioBtn.dataset.id, 10);
       const title = audioBtn.dataset.title;
       const meta = audioBtn.dataset.meta;
       playAudio(mp3, id, title, meta);
@@ -468,19 +573,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. YouTube button click
     const ytBtn = e.target.closest('.btn-youtube:not(.disabled)');
     if (ytBtn) {
+      e.stopPropagation();
       const ytUrl = ytBtn.dataset.yt;
       openYouTubeTab(ytUrl);
       return;
     }
 
-    // 3. Card/List Item Row click (Popup Scripture Modal)
-    const cardItem = e.target.closest('.sermon-card');
-    if (cardItem) {
-      const id = parseInt(cardItem.dataset.id);
-      const sermon = allSermons.find(s => s.id === id);
-      if (sermon) {
-        openScriptureModal(sermon);
+    // 3. Share button click
+    const shareBtn = e.target.closest('.btn-share');
+    if (shareBtn) {
+      e.stopPropagation();
+      let idStr = shareBtn.dataset.id;
+      if (!idStr) {
+        const parentCard = shareBtn.closest('.sermon-card');
+        if (parentCard) idStr = parentCard.dataset.id;
       }
+      const sermon = allSermons.find(s => String(s.id) === String(idStr));
+      if (sermon) {
+        openShareModal(sermon);
+      }
+      return;
+    }
+
+    // 4. Scripture text click ONLY -> Open Scripture Modal
+    const scriptureEl = e.target.closest('.card-scripture');
+    if (scriptureEl) {
+      e.stopPropagation();
+      const cardItem = scriptureEl.closest('.sermon-card');
+      if (cardItem) {
+        const id = parseInt(cardItem.dataset.id, 10);
+        const sermon = allSermons.find(s => s.id === id);
+        if (sermon) {
+          openScriptureModal(sermon);
+        }
+      }
+      return;
     }
   });
 

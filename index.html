@@ -199,6 +199,8 @@
         </div>
       </div>
     </div>
+  </div>
+
   <!-- YouTube Modal Player -->
   <div class="modal-backdrop hidden" id="youtubeModal">
     <div class="modal-dialog">
@@ -212,6 +214,45 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Share Modal Player -->
+  <div class="modal-backdrop hidden" id="shareModal">
+    <div class="modal-dialog share-dialog">
+      <div class="modal-header">
+        <div class="modal-header-badge"><i class="fa-solid fa-share-nodes"></i> 설교 URL 공유하기</div>
+        <button type="button" class="modal-close-btn" id="closeShareModalBtn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body share-modal-body">
+        <h3 id="shareModalTitle" class="share-modal-title">설교 제목</h3>
+        <p id="shareModalMeta" class="share-modal-meta">날짜 | 성경 구절</p>
+        
+        <div class="share-options-list">
+          <div class="share-option-item" id="shareMp3Option">
+            <div class="option-icon audio-icon"><i class="fa-solid fa-headphones"></i></div>
+            <div class="option-info">
+              <div class="option-title">MP3 오디오 URL 복사</div>
+              <div class="option-url" id="shareMp3UrlText">https://...</div>
+            </div>
+            <button type="button" class="btn-copy" id="btnCopyMp3"><i class="fa-regular fa-copy"></i> 복사</button>
+          </div>
+
+          <div class="share-option-item" id="shareYtOption">
+            <div class="option-icon yt-icon"><i class="fa-brands fa-youtube"></i></div>
+            <div class="option-info">
+              <div class="option-title">YouTube 영상 URL 복사</div>
+              <div class="option-url" id="shareYtUrlText">https://youtube.com/...</div>
+            </div>
+            <button type="button" class="btn-copy" id="btnCopyYt"><i class="fa-regular fa-copy"></i> 복사</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-notification hidden" id="toastNotification">
+    <i class="fa-solid fa-circle-check"></i> <span id="toastMessage">클립보드에 복사되었습니다!</span>
   </div>
 
   <footer class="app-footer">
