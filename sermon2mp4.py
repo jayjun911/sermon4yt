@@ -5,6 +5,7 @@ import argparse
 import tempfile
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+import imageio_ffmpeg
 
 INPUT_DIR  = "./sermon"
 OUTPUT_DIR = "./ytube"
@@ -238,29 +239,45 @@ def make_frame(book_ch: str, verses_str: str, title: str,
     if bible_text:
         full_text = " ".join(ln.strip() for ln in bible_text.splitlines() if ln.strip())
         
-        # Dynamically adjust font size to fit the remaining space (HEIGHT - 56)
+        # Dynamically adjust font size to fit the remaining space
         min_font_size = 18
-        max_font_size = 38
+        max_font_size = 72
         best_font_size = max_font_size
+        line_spacing = 10
+        
         for size in range(max_font_size, min_font_size - 1, -2):
             test_font = find_font(size)
             test_lines = wrap_text(draw, full_text, test_font, max_w)
-            total_h = sum(text_h(draw, wline, test_font) + 6 for wline in test_lines)
+            spacing = int(size * 0.4)
+            total_h = sum(text_h(draw, wline, test_font) + spacing for wline in test_lines)
             if total_h > 0:
-                total_h -= 6
-            if y + total_h <= HEIGHT - 56:
+                total_h -= spacing
+            
+            if y + total_h <= HEIGHT - 140:  # 아랫단 여유 공간(마진)을 140으로 늘림
                 best_font_size = size
+                line_spacing = spacing
                 break
         else:
             best_font_size = min_font_size
+            line_spacing = int(min_font_size * 0.4)
 
         font_verse = find_font(best_font_size)
+        final_lines = wrap_text(draw, full_text, font_verse, max_w)
+        total_h = sum(text_h(draw, wline, font_verse) + line_spacing for wline in final_lines)
+        if total_h > 0:
+            total_h -= line_spacing
+        
+        # Vertically center in the remaining space, shifted up slightly for bottom margin
+        remaining_space = HEIGHT - y - 100
+        start_y = y + max(0, (remaining_space - total_h) // 2)
+        
+        y_text = start_y
         x_left = (WIDTH - max_w) // 2
-        for wline in wrap_text(draw, full_text, font_verse, max_w):
-            if y > HEIGHT - 56:
+        for wline in final_lines:
+            if y_text > HEIGHT - 80:
                 break
-            shadow_text(draw, (x_left, y), wline, font_verse, COLOR_VERSE_TEXT)
-            y += text_h(draw, wline, font_verse) + 6
+            shadow_text(draw, (x_left, y_text), wline, font_verse, COLOR_VERSE_TEXT)
+            y_text += text_h(draw, wline, font_verse) + line_spacing
 
     return img
 
@@ -284,7 +301,7 @@ def convert(mp3: Path, mp4: Path, bg_path: str | None, bible_db: dict):
     try:
         img.save(tmp_path, "PNG")
         cmd = [
-            "ffmpeg", "-y",
+            imageio_ffmpeg.get_ffmpeg_exe(), "-y",
             "-loop", "1", "-framerate", "1",
             "-i", tmp_path,
             "-i", str(mp3),
@@ -318,11 +335,14 @@ def main():
         print(f"Loading Bible DB ...")
         bible_db = load_bible_db(BIBLE_DB)
 
-    in_dir  = Path(args.input)
+    in_path = Path(args.input)
     out_dir = Path(OUTPUT_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    mp3s = sorted(in_dir.glob("*.mp3"))
+    if in_path.is_file():
+        mp3s = [in_path]
+    else:
+        mp3s = sorted(in_path.glob("*.mp3"))
     if args.filter:
         if args.filter.lower().endswith(".mp3"):
             target = Path(args.filter).name
@@ -337,9 +357,6 @@ def main():
     for i, mp3 in enumerate(mp3s, 1):
         if args.preview:
             out_path = out_dir / (mp3.stem + ".png")
-            if out_path.exists() and not args.force:
-                print(f"[{i}/{total}] [skip] {out_path.name}")
-                continue
             print(f"[{i}/{total}] [prev] {mp3.name}")
             try:
                 book_ch, verses_str, title = parse_filename(mp3.stem)
@@ -355,9 +372,6 @@ def main():
                 print(f"  [err ] {e}")
         else:
             mp4 = out_dir / (mp3.stem + ".mp4")
-            if mp4.exists() and not args.force:
-                print(f"[{i}/{total}] [skip] {mp3.name}")
-                continue
             print(f"[{i}/{total}] [conv] {mp3.name}")
             try:
                 convert(mp3, mp4, args.bg, bible_db)
