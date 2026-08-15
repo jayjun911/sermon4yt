@@ -9,10 +9,23 @@ document.addEventListener('DOMContentLoaded', () => {
   let displayedCount = 30; // Batch load size for UI performance
   const PAGE_SIZE = 30;
 
+  // Playlist Data Store
+  let allPlaylists = [];
+  let filteredPlaylists = [];
+  let activePlaylistId = null;
+
   // View Mode State
   let currentViewMode = 'list'; // 'card' | 'list'
+  let currentTabMode = 'all'; // 'all' | 'playlists'
 
-  // DOM Elements
+  // DOM Elements - Navigation Tabs
+  const tabAllSermons = document.getElementById('tabAllSermons');
+  const tabPlaylists = document.getElementById('tabPlaylists');
+  const playlistTabBadge = document.getElementById('playlistTabBadge');
+  const allSermonsView = document.getElementById('allSermonsView');
+  const playlistsView = document.getElementById('playlistsView');
+
+  // DOM Elements - All Sermons
   const btnViewCard = document.getElementById('btnViewCard');
   const btnViewList = document.getElementById('btnViewList');
   const searchInput = document.getElementById('searchInput');
@@ -32,6 +45,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const paginationWrapper = document.getElementById('paginationWrapper');
   const loadMoreBtn = document.getElementById('loadMoreBtn');
   const remainingCountEl = document.getElementById('remainingCount');
+
+  // DOM Elements - Playlists Mode
+  const plTotalCount = document.getElementById('plTotalCount');
+  const plSearchInput = document.getElementById('plSearchInput');
+  const clearPlSearchBtn = document.getElementById('clearPlSearchBtn');
+  const playlistItemsList = document.getElementById('playlistItemsList');
+  const activePlTitle = document.getElementById('activePlTitle');
+  const activePlMeta = document.getElementById('activePlMeta');
+  const activePlShareBtn = document.getElementById('activePlShareBtn');
+  const activePlYtLink = document.getElementById('activePlYtLink');
+  const plVideoSearchInput = document.getElementById('plVideoSearchInput');
+  const plSortOrder = document.getElementById('plSortOrder');
+  const playlistVideoList = document.getElementById('playlistVideoList');
+
+
+
+
 
   // View Mode Toggle Listeners
   if (btnViewCard && btnViewList) {
@@ -88,25 +118,39 @@ document.addEventListener('DOMContentLoaded', () => {
   // Active Audio State
   let currentPlayingId = null;
 
-  // 1. Fetch Sermons JSON
+  // 1. Fetch Sermons JSON (with window.SERMONS_DATA fallback for file:// protocol)
   async function loadSermonData() {
     try {
-      const response = await fetch('./sermons.json');
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      allSermons = await response.json();
+      if (window.SERMONS_DATA && Array.isArray(window.SERMONS_DATA) && window.SERMONS_DATA.length > 0) {
+        allSermons = window.SERMONS_DATA;
+      } else {
+        const response = await fetch('./sermons.json');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        allSermons = await response.json();
+      }
       
-      headerTotalCount.textContent = allSermons.length.toLocaleString();
-      loadingSpinner.style.display = 'none';
+      const totalFormatted = allSermons.length.toLocaleString();
+      if (headerTotalCount) headerTotalCount.textContent = totalFormatted;
+      const totalCountBadge = document.getElementById('totalCountBadge');
+      if (totalCountBadge) totalCountBadge.textContent = totalFormatted;
+
+      if (loadingSpinner) loadingSpinner.style.display = 'none';
 
       applyFilters();
     } catch (error) {
-      console.error('Failed to load sermons.json:', error);
-      loadingSpinner.innerHTML = `
-        <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i>
-        <p>설교 데이터를 불러오는 데 실패했습니다 (sermons.json).</p>
-      `;
+      console.error('Failed to load sermons data:', error);
+      if (loadingSpinner) {
+        loadingSpinner.innerHTML = `
+          <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i>
+          <p>설교 데이터를 불러오는 데 실패했습니다.</p>
+        `;
+      }
     }
   }
+
+  // Selected Year Preset State
+  let currentPresetYear = 'all';
+
 
   // Helper: Normalize String for Space & Case Insensitive Matching
   function normalizeStr(str) {
@@ -123,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sortOrder = sortOrderSelect.value;
 
     let isFiltered = false;
-    if (query || startDate || endDate || ytOnly) {
+    if (query || startDate || endDate || ytOnly || (currentPresetYear && currentPresetYear !== 'all')) {
       isFiltered = true;
     }
 
@@ -148,8 +192,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Date Range Match
       const sermonDate = sermon.date || '';
-      if (startDate && sermonDate < startDate) return false;
-      if (endDate && sermonDate > endDate) return false;
+      
+      // Preset Year Priority
+      if (currentPresetYear && currentPresetYear !== 'all') {
+        if (!sermonDate.startsWith(currentPresetYear)) return false;
+      } else {
+        if (startDate && sermonDate < startDate) return false;
+        if (endDate && sermonDate > endDate) return false;
+      }
 
       return true;
     });
@@ -171,6 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
     matchedCountEl.textContent = filteredSermons.length.toLocaleString();
     renderSermons();
   }
+
 
   // 3. Render Sermons (Card View & Detail List View)
   function renderSermons() {
@@ -520,41 +571,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Modal Actions inside Scripture Modal
-  const scriptureModalActions = document.getElementById('scriptureModalActions');
-  if (scriptureModalActions) {
-    scriptureModalActions.addEventListener('click', (e) => {
-      const audioBtn = e.target.closest('.btn-audio');
-      if (audioBtn) {
-        const mp3 = audioBtn.dataset.mp3;
-        const id = parseInt(audioBtn.dataset.id);
-        const title = audioBtn.dataset.title;
-        const meta = audioBtn.dataset.meta;
-        playAudio(mp3, id, title, meta);
-        closeScriptureModal();
-        return;
-      }
-
-      const ytBtn = e.target.closest('.btn-youtube:not(.disabled)');
-      if (ytBtn) {
-        const ytUrl = ytBtn.dataset.yt;
-        closeScriptureModal();
-        openYouTubeTab(ytUrl);
-        return;
-      }
-
-      const shareBtn = e.target.closest('.btn-share');
-      if (shareBtn) {
-        const id = parseInt(shareBtn.dataset.id);
-        const sermon = allSermons.find(s => s.id === id);
-        if (sermon) {
-          closeScriptureModal();
-          openShareModal(sermon);
-        }
-        return;
-      }
-    });
+  // Toast Notification
+  function showToast(message) {
+    const toast = document.getElementById('toastNotification');
+    const msgEl = document.getElementById('toastMessage');
+    if (!toast) return;
+    if (msgEl) msgEl.textContent = message;
+    toast.classList.remove('hidden');
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 2500);
   }
+
+  function copyTextToClipboard(text, successMessage) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(successMessage);
+      }).catch(() => {
+        fallbackCopy(text, successMessage);
+      });
+    } else {
+      fallbackCopy(text, successMessage);
+    }
+  }
+
+  function fallbackCopy(text, successMessage) {
+    const tempInput = document.createElement('input');
+    tempInput.value = text;
+    document.body.appendChild(tempInput);
+    tempInput.select();
+    document.execCommand('copy');
+    document.body.removeChild(tempInput);
+    showToast(successMessage);
+  }
+
+
+
+
 
   // Event Delegation for Cards & List Items
   sermonListEl.addEventListener('click', (e) => {
@@ -627,38 +681,36 @@ document.addEventListener('DOMContentLoaded', () => {
     applyFilters();
   });
 
-  startDateInput.addEventListener('change', applyFilters);
-  endDateInput.addEventListener('change', applyFilters);
+  startDateInput.addEventListener('change', () => {
+    currentPresetYear = 'all';
+    presetBtns.forEach(b => b.classList.remove('active'));
+    applyFilters();
+  });
+  endDateInput.addEventListener('change', () => {
+    currentPresetYear = 'all';
+    presetBtns.forEach(b => b.classList.remove('active'));
+    applyFilters();
+  });
   if (ytOnlyFilter) {
     ytOnlyFilter.addEventListener('change', applyFilters);
   }
   sortOrderSelect.addEventListener('change', applyFilters);
 
-  // Preset Buttons Listener
+  // Preset Buttons Listener (2004 ~ 2014)
   presetBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       presetBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
       const preset = btn.dataset.preset;
+      currentPresetYear = preset;
+
       if (preset === 'all') {
         startDateInput.value = '';
         endDateInput.value = '';
-      } else if (preset === '2014') {
-        startDateInput.value = '2014-01-01';
-        endDateInput.value = '2014-12-31';
-      } else if (preset === '2013') {
-        startDateInput.value = '2013-01-01';
-        endDateInput.value = '2013-12-31';
-      } else if (preset === '2012') {
-        startDateInput.value = '2012-01-01';
-        endDateInput.value = '2012-12-31';
-      } else if (preset === '2011') {
-        startDateInput.value = '2011-01-01';
-        endDateInput.value = '2011-12-31';
-      } else if (preset === '2010') {
-        startDateInput.value = '2000-01-01';
-        endDateInput.value = '2010-12-31';
+      } else if (/^\d{4}$/.test(preset)) {
+        startDateInput.value = `${preset}-01-01`;
+        endDateInput.value = `${preset}-12-31`;
       }
       applyFilters();
     });
@@ -670,11 +722,13 @@ document.addEventListener('DOMContentLoaded', () => {
     clearSearchBtn.style.display = 'none';
     startDateInput.value = '';
     endDateInput.value = '';
+    currentPresetYear = 'all';
     if (ytOnlyFilter) ytOnlyFilter.checked = false;
     sortOrderSelect.value = 'date-desc';
 
     presetBtns.forEach(b => b.classList.remove('active'));
-    document.querySelector('.preset-btn[data-preset="all"]').classList.add('active');
+    const allBtn = document.querySelector('.preset-btn[data-preset="all"]');
+    if (allBtn) allBtn.classList.add('active');
 
     applyFilters();
   });
@@ -685,6 +739,366 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSermons();
   });
 
+  // ==========================================================================
+  // Mode Navigation Tabs Switching
+  // ==========================================================================
+  function switchTab(mode) {
+    currentTabMode = mode;
+    if (mode === 'all') {
+      if (tabAllSermons) tabAllSermons.classList.add('active');
+      if (tabPlaylists) tabPlaylists.classList.remove('active');
+      if (allSermonsView) {
+        allSermonsView.classList.remove('hidden');
+        allSermonsView.style.display = 'block';
+      }
+      if (playlistsView) {
+        playlistsView.classList.add('hidden');
+        playlistsView.style.display = 'none';
+      }
+    } else {
+      if (tabPlaylists) tabPlaylists.classList.add('active');
+      if (tabAllSermons) tabAllSermons.classList.remove('active');
+      if (allSermonsView) {
+        allSermonsView.classList.add('hidden');
+        allSermonsView.style.display = 'none';
+      }
+      if (playlistsView) {
+        playlistsView.classList.remove('hidden');
+        playlistsView.style.display = 'block';
+      }
+
+      // Ensure sidebar is rendered
+      renderPlaylistSidebar();
+
+      // Select playlist
+      if (!activePlaylistId && allPlaylists.length > 0) {
+        selectPlaylist(allPlaylists[0].id);
+      } else if (activePlaylistId) {
+        selectPlaylist(activePlaylistId);
+      }
+    }
+  }
+
+  if (tabAllSermons) {
+    tabAllSermons.addEventListener('click', () => switchTab('all'));
+  }
+  if (tabPlaylists) {
+    tabPlaylists.addEventListener('click', () => switchTab('playlists'));
+  }
+
+
+
+  // ==========================================================================
+  // Playlists Mode Logic
+  // ==========================================================================
+  async function loadPlaylistsData() {
+    try {
+      if (window.PLAYLISTS_DATA && Array.isArray(window.PLAYLISTS_DATA) && window.PLAYLISTS_DATA.length > 0) {
+        allPlaylists = window.PLAYLISTS_DATA;
+      } else {
+        const response = await fetch('./playlists.json');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        allPlaylists = await response.json();
+      }
+
+      if (playlistTabBadge) playlistTabBadge.textContent = allPlaylists.length;
+      if (plTotalCount) plTotalCount.textContent = allPlaylists.length;
+
+      renderPlaylistSidebar();
+
+      if (allPlaylists.length > 0) {
+        selectPlaylist(allPlaylists[0].id);
+      }
+    } catch (error) {
+      console.warn('Playlists data not loaded yet or failed:', error);
+      if (playlistItemsList) {
+        playlistItemsList.innerHTML = `
+          <div style="padding: 1rem; color: var(--text-muted); font-size: 0.85rem; text-align: center;">
+            <i class="fa-solid fa-circle-info"></i> 재생목록 데이터가 아직 준비되지 않았습니다.
+          </div>
+        `;
+      }
+    }
+  }
+
+
+  function renderPlaylistSidebar() {
+    if (!playlistItemsList) return;
+    const query = normalizeStr(plSearchInput ? plSearchInput.value : '');
+
+    filteredPlaylists = allPlaylists.filter(pl => {
+      if (!query) return true;
+      return normalizeStr(pl.title).includes(query) || normalizeStr(pl.id).includes(query);
+    });
+
+    if (filteredPlaylists.length === 0) {
+      playlistItemsList.innerHTML = `
+        <div style="padding: 1.5rem 1rem; color: var(--text-muted); font-size: 0.85rem; text-align: center;">
+          <p>검색된 재생목록이 없습니다.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    filteredPlaylists.forEach(pl => {
+      const isActive = pl.id === activePlaylistId;
+      html += `
+        <button type="button" class="playlist-item-btn ${isActive ? 'active' : ''}" data-pl-id="${pl.id}">
+          <div class="pl-item-info">
+            <i class="fa-solid fa-folder-play"></i>
+            <span class="pl-item-title" title="${escapeHtml(pl.title)}">${escapeHtml(pl.title)}</span>
+          </div>
+          <span class="pl-item-badge">${pl.video_count || (pl.videos ? pl.videos.length : 0)}편</span>
+        </button>
+      `;
+    });
+
+    playlistItemsList.innerHTML = html;
+  }
+
+  function selectPlaylist(playlistId) {
+    activePlaylistId = playlistId;
+    const currentPl = allPlaylists.find(p => p.id === playlistId);
+    if (!currentPl) return;
+
+    // Update sidebar active classes
+    renderPlaylistSidebar();
+
+    // Update Banner Info
+    if (activePlTitle) activePlTitle.textContent = currentPl.title;
+    if (activePlMeta) activePlMeta.textContent = `총 ${currentPl.videos ? currentPl.videos.length : 0}개의 설교 영상이 등록되어 있습니다.`;
+    if (activePlShareBtn) {
+      activePlShareBtn.classList.remove('hidden');
+    }
+    if (activePlYtLink) {
+      activePlYtLink.href = currentPl.url;
+      activePlYtLink.classList.remove('hidden');
+    }
+
+    renderPlaylistVideos();
+  }
+
+
+  function renderPlaylistVideos() {
+    if (!playlistVideoList) return;
+    const currentPl = allPlaylists.find(p => p.id === activePlaylistId);
+    if (!currentPl || !currentPl.videos || currentPl.videos.length === 0) {
+      playlistVideoList.innerHTML = `
+        <div class="pl-empty-state">
+          <i class="fa-solid fa-video-slash"></i>
+          <h3>등록된 영상이 없습니다</h3>
+          <p>이 재생목록에 영상이 존재하지 않습니다.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const searchQuery = normalizeStr(plVideoSearchInput ? plVideoSearchInput.value : '');
+    const sortVal = plSortOrder ? plSortOrder.value : 'date-asc';
+
+    let videos = currentPl.videos.filter(v => {
+      if (!searchQuery) return true;
+      const titleMatch = normalizeStr(v.title).includes(searchQuery);
+      const sTitleMatch = v.sermon_title ? normalizeStr(v.sermon_title).includes(searchQuery) : false;
+      const scriptureMatch = v.scripture ? normalizeStr(v.scripture).includes(searchQuery) : false;
+      return titleMatch || sTitleMatch || scriptureMatch;
+    });
+
+    // Sorting (Default: date-asc)
+    videos.sort((a, b) => {
+      if (sortVal === 'date-asc') {
+        const dA = a.date || '9999-99-99';
+        const dB = b.date || '9999-99-99';
+        return dA.localeCompare(dB) || (a.index || 0) - (b.index || 0);
+      } else if (sortVal === 'date-desc') {
+        const dA = a.date || '0000-00-00';
+        const dB = b.date || '0000-00-00';
+        return dB.localeCompare(dA) || (b.index || 0) - (a.index || 0);
+      } else if (sortVal === 'title-asc') {
+        return (a.title || '').localeCompare(b.title || '');
+      }
+      return 0;
+    });
+
+
+    if (videos.length === 0) {
+      playlistVideoList.innerHTML = `
+        <div class="pl-empty-state">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <h3>검색 결과가 없습니다</h3>
+          <p>다른 검색어로 검색해 보세요.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    videos.forEach((v, index) => {
+      const displayTitle = v.sermon_title || v.title;
+      const hasDate = Boolean(v.date);
+      const hasScripture = Boolean(v.scripture);
+      const hasScriptureText = Boolean(v.scripture_text);
+      const hasMp3 = Boolean(v.mp3_url);
+      const sermonId = v.sermon_id;
+
+      const metaString = `${v.date || ''} | ${v.scripture || ''}`;
+
+      html += `
+        <div class="pl-video-item" data-video-id="${v.video_id}" data-sermon-id="${sermonId || ''}">
+          <div class="pl-video-index">#${index + 1}</div>
+          <div class="pl-video-details">
+            <h4 class="pl-video-title">${escapeHtml(v.title)}</h4>
+            <div class="pl-video-meta">
+              ${hasDate ? `<span><i class="fa-regular fa-calendar"></i> ${v.date}</span>` : ''}
+              ${hasScripture ? `<span class="verse-pill ${hasScriptureText ? 'cursor-pointer scripture-btn-trigger' : ''}" data-id="${sermonId || ''}"><i class="fa-solid fa-book-open"></i> ${escapeHtml(v.scripture)}</span>` : ''}
+              ${!hasDate && !hasScripture ? `<span><i class="fa-brands fa-youtube"></i> YouTube 영상</span>` : ''}
+            </div>
+          </div>
+          <div class="pl-video-actions">
+            <button type="button" class="btn-media btn-youtube" data-yt="${v.url}" title="YouTube 영상 재생">
+              <i class="fa-brands fa-youtube"></i> 유튜브 보기
+            </button>
+            ${hasMp3 ? `
+              <button type="button" class="btn-media btn-audio" data-mp3="${v.mp3_url}" data-id="${sermonId || 0}" data-title="${escapeHtml(displayTitle)}" data-meta="${escapeHtml(metaString)}" title="MP3 설교 듣기">
+                <i class="fa-solid fa-headphones"></i> 오디오
+              </button>
+            ` : ''}
+            ${hasScriptureText ? `
+              <button type="button" class="btn-media btn-scripture" data-id="${sermonId}" title="성경 본문 보기">
+                <i class="fa-solid fa-book-bible"></i> 본문
+              </button>
+            ` : ''}
+            <button type="button" class="btn-media btn-share" data-id="${sermonId || ''}" data-video-id="${v.video_id}" data-yt="${v.url}" data-mp3="${v.mp3_url || ''}" data-title="${escapeHtml(displayTitle)}" data-meta="${escapeHtml(metaString)}" title="설교 링크 공유">
+              <i class="fa-solid fa-share-nodes"></i> 공유
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    playlistVideoList.innerHTML = html;
+  }
+
+
+
+  // Playlist Sidebar Item Click Handler
+  if (playlistItemsList) {
+    playlistItemsList.addEventListener('click', (e) => {
+      const btn = e.target.closest('.playlist-item-btn');
+      if (btn) {
+        const plId = btn.dataset.plId;
+        if (plId) selectPlaylist(plId);
+      }
+    });
+  }
+
+  // Playlist Search Filter Input
+  if (plSearchInput) {
+    plSearchInput.addEventListener('input', () => {
+      if (plSearchInput.value.trim().length > 0) {
+        if (clearPlSearchBtn) clearPlSearchBtn.classList.remove('hidden');
+      } else {
+        if (clearPlSearchBtn) clearPlSearchBtn.classList.add('hidden');
+      }
+      renderPlaylistSidebar();
+    });
+  }
+
+  if (clearPlSearchBtn) {
+    clearPlSearchBtn.addEventListener('click', () => {
+      plSearchInput.value = '';
+      clearPlSearchBtn.classList.add('hidden');
+      renderPlaylistSidebar();
+    });
+  }
+
+  // Active Playlist Share Button Click Handler
+  if (activePlShareBtn) {
+    activePlShareBtn.addEventListener('click', () => {
+      const currentPl = allPlaylists.find(p => p.id === activePlaylistId);
+      if (currentPl && currentPl.url) {
+        copyTextToClipboard(currentPl.url, `'${currentPl.title}' 재생목록 링크가 복사되었습니다!`);
+      }
+    });
+  }
+
+
+  // Playlist Video Search & Sort Listeners
+  if (plVideoSearchInput) {
+    plVideoSearchInput.addEventListener('input', renderPlaylistVideos);
+  }
+  if (plSortOrder) {
+    plSortOrder.addEventListener('change', renderPlaylistVideos);
+  }
+
+
+
+  // Playlist Video List Click Delegation
+  if (playlistVideoList) {
+    playlistVideoList.addEventListener('click', (e) => {
+      // 1. Audio button click
+      const audioBtn = e.target.closest('.btn-audio');
+      if (audioBtn) {
+        e.stopPropagation();
+        const mp3 = audioBtn.dataset.mp3;
+        const id = parseInt(audioBtn.dataset.id, 10);
+        const title = audioBtn.dataset.title;
+        const meta = audioBtn.dataset.meta;
+        playAudio(mp3, id, title, meta);
+        return;
+      }
+
+      // 2. YouTube button click
+      const ytBtn = e.target.closest('.btn-youtube');
+      if (ytBtn) {
+        e.stopPropagation();
+        const ytUrl = ytBtn.dataset.yt;
+        openYouTubeTab(ytUrl);
+        return;
+      }
+
+      // 3. Share button click
+      const shareBtn = e.target.closest('.btn-share');
+      if (shareBtn) {
+        e.stopPropagation();
+        const sId = shareBtn.dataset.id;
+        const sermon = sId ? allSermons.find(s => String(s.id) === String(sId)) : null;
+        if (sermon) {
+          openShareModal(sermon);
+        } else {
+          // Construct fallback sermon object for modal
+          const fallbackObj = {
+            id: 0,
+            title: shareBtn.dataset.title || '설교 영상',
+            date: '',
+            scripture: '',
+            url: shareBtn.dataset.mp3 || '',
+            youtube_url: shareBtn.dataset.yt || ''
+          };
+          openShareModal(fallbackObj);
+        }
+        return;
+      }
+
+      // 4. Scripture button / badge click
+      const scriptureTrigger = e.target.closest('.btn-scripture, .scripture-btn-trigger');
+      if (scriptureTrigger) {
+        e.stopPropagation();
+        const sId = parseInt(scriptureTrigger.dataset.id, 10);
+        const sermon = allSermons.find(s => s.id === sId);
+        if (sermon) {
+          openScriptureModal(sermon);
+        }
+        return;
+      }
+    });
+  }
+
   // Initialize Data
   loadSermonData();
+  loadPlaylistsData();
+  switchTab('all');
 });
+
+
