@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import subprocess
 import argparse
@@ -6,6 +7,14 @@ import tempfile
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import imageio_ffmpeg
+
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 INPUT_DIR  = "./sermon"
 OUTPUT_DIR = "./ytube"
@@ -139,43 +148,102 @@ def text_h(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont) -
 
 # ── Filename parsing ───────────────────────────────────────────────────────────
 
-def parse_filename(stem: str) -> tuple[str, str, str]:
+def parse_filename(stem: str) -> tuple[str, str, str, str]:
     """
-    New format: '성령의 하나되게 하심 (에베소서 04장 1-6절) 2014-02-09'
-    Old format: '에베소서 04장 1-6절 - 성령의 하나되게 하심'
-    -> ("에베소서 04장", "1-6절", "성령의 하나되게 하심")
+    Parse sermon filename into (book_ch, verses_str, title, normalized_stem).
+    Rules:
+      - '시편' uses '편' instead of '장' (e.g. 시편 132장 -> 시편 132편). Other books use '장'.
+      - Dates are wrapped in square brackets: e.g. 2010-05-27 -> [2010-05-27].
+      - Standard normalized stem format: "{title} ({scripture}) [{date}]"
+    Examples:
+      '영원한 하나님의 약속 (시편 132장 10-18절) 2010-05-27'
+      -> book_ch: '시편 132편'
+         verses_str: '10-18절'
+         title: '영원한 하나님의 약속'
+         normalized_stem: '영원한 하나님의 약속 (시편 132편 10-18절) [2010-05-27]'
     """
-    # New format: Title (Scripture) [Date]
-    m = re.match(r"^(.*?)\s*\(([^)]+)\)(?:\s+\d{4}-\d{2}-\d{2})?$", stem)
+    stem = stem.strip()
+    date_str = ""
+    title = ""
+    raw_scripture = ""
+
+    # 1. New format: Title (Scripture) [Date]
+    m = re.match(r"^(.*?)\s*\(([^)]+)\)(?:\s*[\[(]?(\d{4}[-./]\d{2}[-./]\d{2})[\])]?)?\s*$", stem)
     if m:
         title = m.group(1).strip()
-        scripture = m.group(2).strip()
-        sm = re.match(r"^(.*\d+장)\s*(.+)?$", scripture)
-        if sm:
-            return sm.group(1).strip(), (sm.group(2) or "").strip(), title
-        return scripture, "", title
+        raw_scripture = m.group(2).strip()
+        date_str = m.group(3) or ""
+    else:
+        # 2. Old format: Scripture - Title [Date]
+        parts = stem.split(" - ", 1)
+        if len(parts) > 1:
+            raw_scripture = parts[0].strip()
+            title_part = parts[1].strip()
+            dm = re.search(r"[\[(]?(\d{4}[-./]\d{2}[-./]\d{2})[\])]?\s*$", title_part)
+            if dm:
+                date_str = dm.group(1)
+                title = title_part[:dm.start()].strip()
+            else:
+                title = title_part
+        else:
+            raw_scripture = stem
 
-    # Old format: Scripture - Title
-    parts = stem.split(" - ", 1)
-    title = parts[1].strip() if len(parts) > 1 else ""
-    scripture = parts[0].strip()
-    m = re.match(r"^(.*\d+장)\s*(.+)?$", scripture)
-    if m:
-        return m.group(1).strip(), (m.group(2) or "").strip(), title
-    return scripture, "", title
+    # Extract book/chapter and verses from raw_scripture
+    sm = re.match(r"^(.*?\d+\s*[장편])\s*(.+)?$", raw_scripture)
+    if sm:
+        raw_book_ch = sm.group(1).strip()
+        verses_str = (sm.group(2) or "").strip()
+    else:
+        raw_book_ch = raw_scripture
+        verses_str = ""
+
+    # Parse book name, chapter number, unit (장 or 편)
+    bm = re.match(r"^(.*?)\s*(\d+)\s*([장편])$", raw_book_ch)
+    if bm:
+        book_kor = bm.group(1).strip()
+        chapter = int(bm.group(2))
+        unit = "편" if book_kor == "시편" else "장"
+        book_ch = f"{book_kor} {chapter}{unit}"
+    else:
+        book_kor = ""
+        chapter = 0
+        unit = "장"
+        book_ch = raw_book_ch
+
+    # Standard scripture format
+    if book_ch:
+        scripture_part = f"{book_ch} {verses_str}".strip() if verses_str else book_ch
+    else:
+        scripture_part = raw_scripture
+
+    formatted_date = f"[{date_str.replace('.', '-').replace('/', '-')}]" if date_str else ""
+
+    if title and scripture_part:
+        if formatted_date:
+            normalized_stem = f"{title} ({scripture_part}) {formatted_date}"
+        else:
+            normalized_stem = f"{title} ({scripture_part})"
+    elif title:
+        normalized_stem = f"{title} {formatted_date}".strip() if formatted_date else title
+    elif scripture_part:
+        normalized_stem = f"{scripture_part} {formatted_date}".strip() if formatted_date else scripture_part
+    else:
+        normalized_stem = stem
+
+    return book_ch, verses_str, title, normalized_stem
 
 
 def parse_scripture_ref(book_ch: str, verses_str: str) -> tuple[str, int, int, int]:
     """("창세기 02장", "1-14절") -> ("창세기", 2, 1, 14)"""
-    m = re.match(r"^(.*?)\s+(\d+)장$", book_ch)
+    m = re.match(r"^(.*?)\s*(\d+)[장편]$", book_ch)
     if not m:
         return "", 0, 0, 0
     book_kor = m.group(1).strip()
     chapter  = int(m.group(2))
-    vm = re.match(r"(\d+)[-~](\d+)절", verses_str)
+    vm = re.match(r"(\d+)[-~](\d+)(?:절)?", verses_str)
     if vm:
         return book_kor, chapter, int(vm.group(1)), int(vm.group(2))
-    vm = re.match(r"(\d+)절", verses_str)
+    vm = re.match(r"(\d+)(?:절)?", verses_str)
     if vm:
         v = int(vm.group(1))
         return book_kor, chapter, v, v
@@ -211,7 +279,7 @@ def make_frame(book_ch: str, verses_str: str, title: str,
 
     y = 80
 
-    # Row 1: "창세기 2장" (big gold) + "1-14절" (smaller gold, baseline-aligned)
+    # Row 1: "창세기 2장" / "시편 132편" (big gold) + "10-18절" (smaller gold, baseline-aligned)
     bw = int(draw.textlength(book_ch, font=font_big))
     bh = text_h(draw, book_ch, font=font_big)
     mw = int(draw.textlength(" " + verses_str, font=font_med)) if verses_str else 0
@@ -285,7 +353,7 @@ def make_frame(book_ch: str, verses_str: str, title: str,
 # ── Conversion ─────────────────────────────────────────────────────────────────
 
 def convert(mp3: Path, mp4: Path, bg_path: str | None, bible_db: dict):
-    book_ch, verses_str, title = parse_filename(mp3.stem)
+    book_ch, verses_str, title, _ = parse_filename(mp3.stem)
     bible_text = ""
     if bible_db:
         book_kor, chapter, v_start, v_end = parse_scripture_ref(book_ch, verses_str)
@@ -322,18 +390,15 @@ def convert(mp3: Path, mp4: Path, bg_path: str | None, bible_db: dict):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert sermon MP3s to YouTube MP4s")
-    parser.add_argument("--input",     default=INPUT_DIR, help="MP3 source directory")
-    parser.add_argument("--bg",        metavar="IMAGE",   help="Background image (optional)")
-    parser.add_argument("--filter",    metavar="QUERY",   help="Exact filename or keyword")
-    parser.add_argument("--no-bible",  action="store_true", help="Skip Bible text overlay")
-    parser.add_argument("--preview",   action="store_true", help="Save PNG only (no ffmpeg)")
-    parser.add_argument("--force",     action="store_true", help="Overwrite existing files")
+    parser.add_argument("--input",        default=INPUT_DIR, help="MP3 source directory or file")
+    parser.add_argument("--bg",           metavar="IMAGE",   help="Background image (optional)")
+    parser.add_argument("--filter",       metavar="QUERY",   help="Exact filename or keyword")
+    parser.add_argument("--no-bible",     action="store_true", help="Skip Bible text overlay")
+    parser.add_argument("--preview",      action="store_true", help="Save PNG only (no ffmpeg)")
+    parser.add_argument("--force",        action="store_true", help="Overwrite existing files")
+    parser.add_argument("--rename-mp3",   action="store_true", help="Rename original MP3 files to normalized format")
+    parser.add_argument("--rename-only",  action="store_true", help="Only rename MP3 files to normalized format")
     args = parser.parse_args()
-
-    bible_db = {}
-    if not args.no_bible:
-        print(f"Loading Bible DB ...")
-        bible_db = load_bible_db(BIBLE_DB)
 
     in_path = Path(args.input)
     out_dir = Path(OUTPUT_DIR)
@@ -354,12 +419,44 @@ def main():
     total = len(mp3s)
     print(f"Found {total} MP3 file(s)")
 
+    if args.rename_only:
+        for i, mp3 in enumerate(mp3s, 1):
+            _, _, _, norm_stem = parse_filename(mp3.stem)
+            new_name = norm_stem + mp3.suffix
+            if new_name != mp3.name:
+                new_path = mp3.with_name(new_name)
+                if not new_path.exists():
+                    mp3.rename(new_path)
+                    print(f"[{i}/{total}] [renamed] {mp3.name} -> {new_name}")
+                else:
+                    print(f"[{i}/{total}] [skip] Target already exists: {new_name}")
+            else:
+                print(f"[{i}/{total}] [ok] {mp3.name}")
+        print("Done.")
+        return
+
+    bible_db = {}
+    if not args.no_bible:
+        print(f"Loading Bible DB ...")
+        bible_db = load_bible_db(BIBLE_DB)
+
     for i, mp3 in enumerate(mp3s, 1):
+        book_ch, verses_str, title, norm_stem = parse_filename(mp3.stem)
+
+        if args.rename_mp3:
+            new_name = norm_stem + mp3.suffix
+            if new_name != mp3.name:
+                new_path = mp3.with_name(new_name)
+                if not new_path.exists():
+                    mp3.rename(new_path)
+                    print(f"  [renamed mp3] {mp3.name} -> {new_name}")
+                    mp3 = new_path
+
+        out_stem = norm_stem
         if args.preview:
-            out_path = out_dir / (mp3.stem + ".png")
-            print(f"[{i}/{total}] [prev] {mp3.name}")
+            out_path = out_dir / (out_stem + ".png")
+            print(f"[{i}/{total}] [prev] {mp3.name} -> {out_path.name}")
             try:
-                book_ch, verses_str, title = parse_filename(mp3.stem)
                 bible_text = ""
                 if bible_db:
                     book_kor, chapter, v_start, v_end = parse_scripture_ref(book_ch, verses_str)
@@ -371,8 +468,8 @@ def main():
             except Exception as e:
                 print(f"  [err ] {e}")
         else:
-            mp4 = out_dir / (mp3.stem + ".mp4")
-            print(f"[{i}/{total}] [conv] {mp3.name}")
+            mp4 = out_dir / (out_stem + ".mp4")
+            print(f"[{i}/{total}] [conv] {mp3.name} -> {mp4.name}")
             try:
                 convert(mp3, mp4, args.bg, bible_db)
             except Exception as e:

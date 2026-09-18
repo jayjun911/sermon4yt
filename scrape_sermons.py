@@ -1,10 +1,16 @@
 import os
 import re
 import json
+import sys
 import argparse
 import urllib3
 import requests
 from bs4 import BeautifulSoup
+
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -242,27 +248,38 @@ def main():
         entries = load_entries()
 
     total = len(entries)
+    target_entries = entries
 
     if args.list:
         indices = parse_spec(args.list, total)
-        print_entries([entries[i - 1] for i in indices])
-        return
+        target_entries = [entries[i - 1] for i in indices]
 
     if args.search:
         q = args.search.lower()
-        results = [e for e in entries if q in e["title"].lower() or q in e["scripture"].lower() or q in e.get("date", "").lower()]
-        print(f"Found {len(results)} result(s) for '{args.search}':")
-        print_entries(results)
+        target_entries = [
+            e for e in target_entries
+            if q in e["title"].lower() or q in e["scripture"].lower() or q in e.get("date", "").lower()
+        ]
+
+    if args.list or args.search:
+        if args.list and args.search:
+            print(f"Found {len(target_entries)} result(s) for '{args.search}' in range [{args.list}]:")
+        elif args.search:
+            print(f"Found {len(target_entries)} result(s) for '{args.search}':")
+        elif args.list:
+            print(f"Showing {len(target_entries)} entry(ies) for range [{args.list}]:")
+
+        print_entries(target_entries)
 
         if args.down is not None:
             if args.down == "SEARCH_RESULTS":
-                targets = results
+                targets = target_entries
             elif is_search_query(args.down):
                 sub_q = args.down.lower()
-                targets = [e for e in results if sub_q in e["title"].lower() or sub_q in e["scripture"].lower()]
+                targets = [e for e in target_entries if sub_q in e["title"].lower() or sub_q in e["scripture"].lower()]
             else:
-                indices = parse_spec(args.down, len(results))
-                targets = [results[i - 1] for i in indices]
+                indices = parse_spec(args.down, len(target_entries))
+                targets = [target_entries[i - 1] for i in indices]
 
             if not targets:
                 print("No entries selected for download.")
