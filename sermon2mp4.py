@@ -352,7 +352,7 @@ def make_frame(book_ch: str, verses_str: str, title: str,
 
 # ── Conversion ─────────────────────────────────────────────────────────────────
 
-def convert(mp3: Path, mp4: Path, bg_path: str | None, bible_db: dict):
+def convert(mp3: Path, mp4: Path, bg_path: str | None, bible_db: dict, repeat: int = 1):
     book_ch, verses_str, title, _ = parse_filename(mp3.stem)
     bible_text = ""
     if bible_db:
@@ -368,10 +368,12 @@ def convert(mp3: Path, mp4: Path, bg_path: str | None, bible_db: dict):
         tmp_path = tmp.name
     try:
         img.save(tmp_path, "PNG")
+        audio_args = ["-stream_loop", str(repeat - 1)] if repeat > 1 else []
         cmd = [
             imageio_ffmpeg.get_ffmpeg_exe(), "-y",
             "-loop", "1", "-framerate", "1",
             "-i", tmp_path,
+            *audio_args,
             "-i", str(mp3),
             "-c:v", "libx264", "-preset", "slow", "-tune", "stillimage",
             "-c:a", "aac", "-b:a", "192k",
@@ -398,7 +400,11 @@ def main():
     parser.add_argument("--force",        action="store_true", help="Overwrite existing files")
     parser.add_argument("--rename-mp3",   action="store_true", help="Rename original MP3 files to normalized format")
     parser.add_argument("--rename-only",  action="store_true", help="Only rename MP3 files to normalized format")
+    parser.add_argument("--repeat",       type=int, default=1, metavar="N", help="Repeat MP3 audio N times consecutively")
     args = parser.parse_args()
+
+    if args.repeat < 1:
+        parser.error("--repeat must be 1 or greater")
 
     in_path = Path(args.input)
     out_dir = Path(OUTPUT_DIR)
@@ -469,9 +475,10 @@ def main():
                 print(f"  [err ] {e}")
         else:
             mp4 = out_dir / (out_stem + ".mp4")
-            print(f"[{i}/{total}] [conv] {mp3.name} -> {mp4.name}")
+            repeat_info = f" (x{args.repeat})" if args.repeat > 1 else ""
+            print(f"[{i}/{total}] [conv] {mp3.name} -> {mp4.name}{repeat_info}")
             try:
-                convert(mp3, mp4, args.bg, bible_db)
+                convert(mp3, mp4, args.bg, bible_db, repeat=args.repeat)
             except Exception as e:
                 print(f"  [err ] {e}")
 
